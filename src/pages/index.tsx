@@ -1,66 +1,113 @@
-"use client"
+"use client";
 
-import type React from "react"
+import type React from "react";
+import { useState } from "react";
+import { Search, Send } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
-import { useState } from "react"
-import { Search, Send } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+// Define a more specific type for the expected successful response
+interface PollutionResponse {
+  summary: string;
+  // Add other potential fields if known
+}
+
+// Define a type for an error response
+interface ErrorResponse {
+  error: string;
+}
 
 export default function Home() {
-  const [query, setQuery] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
-  const [results, setResults] = useState<null | {
-    airQuality: string
-    prediction: string
-    recommendations: string[]
-    pollutants: {
-      pm25: number
-      pm10: number
-      no2: number
-      o3: number
-    }
-  }>(null)
+  const [query, setQuery] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  // Use a union type for results: successful response, error, or null
+  const [results, setResults] = useState<
+    PollutionResponse | ErrorResponse | null
+  >(null);
+  const [submittedQuery, setSubmittedQuery] = useState<string>(""); // To store the query that was actually submitted
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!query.trim()) return
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const currentQuery = query.trim();
+    if (!currentQuery) return;
 
-    setIsLoading(true)
+    setIsLoading(true);
+    setResults(null); // Clear previous results
+    setSubmittedQuery(currentQuery); // Store the query that's being submitted
 
-    // Simulate API call with timeout
-    setTimeout(() => {
-      // Mock data - in a real app, this would come from your AI backend
-      setResults({
-        airQuality: "Moderate",
-        prediction:
-          "Based on current trends and weather patterns, air quality in Sheffield city center is expected to improve over the next 24 hours as wind speeds increase from the west.",
-        recommendations: [
-          "Consider using public transport instead of driving",
-          "Vulnerable individuals should limit outdoor activities during peak traffic hours",
-          "Keep windows closed during morning rush hour (7-9am)",
-        ],
-        pollutants: {
-          pm25: 12.3,
-          pm10: 24.7,
-          no2: 38.2,
-          o3: 42.1,
+    try {
+      const response = await fetch("http://127.0.0.1:8000/pollution-forecast", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      })
-      setIsLoading(false)
-    }, 1500)
-  }
+        body: JSON.stringify({ query: currentQuery }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(
+          `API request failed with status ${response.status}: ${
+            errorText || response.statusText
+          }`
+        );
+      }
+
+      const data = await response.json();
+      // Check if the response has the expected 'summary' field
+      if (data && typeof data.summary === "string") {
+        setResults(data as PollutionResponse);
+      } else {
+        // If 'summary' is missing, treat it as an unexpected response format
+        console.warn(
+          "API response is missing the 'summary' field or is not in the expected format:",
+          data
+        );
+        setResults({
+          error: "Received an unexpected response format from the server.",
+        });
+      }
+    } catch (error) {
+      console.error("Failed to fetch pollution data:", error);
+      setResults({
+        error:
+          (error as Error).message ||
+          "An unknown error occurred while fetching data.",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Helper function to check if the result is an error
+  const isErrorResult = (res: any): res is ErrorResponse => {
+    return res && typeof res.error === "string";
+  };
+
+  // Helper function to check if the result is a successful pollution response
+  const isPollutionResult = (res: any): res is PollutionResponse => {
+    return res && typeof res.summary === "string";
+  };
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-800 text-white p-4 md:p-8 flex flex-col items-center justify-center">
+    <main className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-800 text-white p-4 md:p-8 flex flex-col items-center">
       <div className="w-full max-w-3xl mx-auto">
         {/* Title */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold mb-2">
             Sheffield Air<span className="text-emerald-400">Quality</span>AI
           </h1>
-          <p className="text-gray-300">Ask about pollution in Sheffield and get AI-powered insights and predictions</p>
+          <p className="text-gray-300">
+            Ask about pollution in Sheffield and get AI-powered insights and
+            predictions
+          </p>
         </div>
 
         {/* Search Input */}
@@ -74,121 +121,88 @@ export default function Home() {
                 className="pl-10 py-6 bg-gray-800 border-gray-700 text-white w-full rounded-lg focus:ring-emerald-500 focus:border-emerald-500"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
+                disabled={isLoading}
               />
             </div>
             <Button
               type="submit"
               className="bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-6"
-              disabled={isLoading}
+              disabled={isLoading || !query.trim()}
             >
               {isLoading ? "Processing..." : "Ask AI"}
               {!isLoading && <Send className="ml-2 h-4 w-4" />}
             </Button>
           </div>
           <p className="text-sm text-gray-400 mt-2">
-            Try: "How is the air quality in Sheffield city center today?" or "What's the pollution forecast for
-            tomorrow?"
+            Try: "How is the air quality in Sheffield city center today?" or
+            "What's the pollution forecast for tomorrow?"
           </p>
         </form>
 
+        {/* Loading Spinner Section */}
+        {isLoading && (
+          <div className="text-center mt-8 text-white">
+            <svg
+              className="animate-spin h-10 w-10 text-emerald-400 mx-auto"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              ></circle>
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              ></path>
+            </svg>
+            <p className="mt-3 text-lg">Fetching AI insights...</p>
+          </div>
+        )}
+
         {/* Results Section */}
-        {results && (
-          <Card className="bg-gray-800 border-gray-700 w-full">
+        {!isLoading && results && (
+          <Card className="bg-gray-800 border-gray-700 w-full mt-8">
             <CardHeader>
-              <CardTitle className="text-xl text-emerald-400">AI Response</CardTitle>
-              <CardDescription>
-                Based on your query: <span className="text-emerald-300">"{query}"</span>
-              </CardDescription>
+              <CardTitle className="text-xl text-emerald-400">
+                Response
+              </CardTitle>{" "}
+              {/* Changed title */}
+              {submittedQuery && (
+                <CardDescription>
+                  For query:{" "}
+                  <span className="text-emerald-300">"{submittedQuery}"</span>
+                </CardDescription>
+              )}
             </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Prediction */}
-              <div>
-                <h3 className="text-lg font-semibold mb-2">Analysis</h3>
-                <p className="text-gray-300">{results.prediction}</p>
-              </div>
-
-              {/* Current Status */}
-              <div>
-                <h3 className="text-lg font-semibold mb-2">Current Status</h3>
-                <div className="bg-gray-700/50 p-4 rounded-lg">
-                  <div className="flex items-center justify-between mb-4">
-                    <span>Air Quality Index:</span>
-                    <span
-                      className={`font-bold ${
-                        results.airQuality === "Good"
-                          ? "text-green-400"
-                          : results.airQuality === "Moderate"
-                            ? "text-yellow-400"
-                            : "text-red-400"
-                      }`}
-                    >
-                      {results.airQuality}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="bg-gray-700 p-3 rounded-lg">
-                      <div className="text-sm text-gray-400">PM2.5</div>
-                      <div className="text-xl font-bold">{results.pollutants.pm25}</div>
-                      <div className="text-xs text-gray-500">µg/m³</div>
-                    </div>
-
-                    <div className="bg-gray-700 p-3 rounded-lg">
-                      <div className="text-sm text-gray-400">PM10</div>
-                      <div className="text-xl font-bold">{results.pollutants.pm10}</div>
-                      <div className="text-xs text-gray-500">µg/m³</div>
-                    </div>
-
-                    <div className="bg-gray-700 p-3 rounded-lg">
-                      <div className="text-sm text-gray-400">NO₂</div>
-                      <div className="text-xl font-bold">{results.pollutants.no2}</div>
-                      <div className="text-xs text-gray-500">µg/m³</div>
-                    </div>
-
-                    <div className="bg-gray-700 p-3 rounded-lg">
-                      <div className="text-sm text-gray-400">O₃</div>
-                      <div className="text-xl font-bold">{results.pollutants.o3}</div>
-                      <div className="text-xs text-gray-500">µg/m³</div>
-                    </div>
-                  </div>
+            <CardContent>
+              {isPollutionResult(results) ? (
+                // Display the summary, preserving line breaks
+                <div className="text-gray-300 whitespace-pre-line">
+                  {results.summary}
                 </div>
-              </div>
-
-              {/* Recommendations */}
-              <div>
-                <h3 className="text-lg font-semibold mb-2">Recommendations</h3>
-                <ul className="space-y-2 bg-gray-700/50 p-4 rounded-lg">
-                  {results.recommendations.map((rec, index) => (
-                    <li key={index} className="flex items-start gap-2">
-                      <div className="bg-emerald-500/20 text-emerald-500 p-1 rounded-full mt-0.5 flex-shrink-0">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          className="h-4 w-4"
-                          viewBox="0 0 20 20"
-                          fill="currentColor"
-                        >
-                          <path
-                            fillRule="evenodd"
-                            d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                            clipRule="evenodd"
-                          />
-                        </svg>
-                      </div>
-                      <span className="text-gray-300">{rec}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              {/* Data Source */}
-              <div className="text-xs text-gray-500 italic">
-                Data sourced from Sheffield City Council's air quality monitoring stations and the UK's Department for
-                Environment, Food and Rural Affairs (DEFRA).
-              </div>
+              ) : isErrorResult(results) ? (
+                // Display error message
+                <div className="text-red-400">
+                  <p className="font-semibold">Error:</p>
+                  <p>{results.error}</p>
+                </div>
+              ) : (
+                // Fallback for unexpected result structure (though should be caught by handleSubmit)
+                <pre className="text-sm whitespace-pre-wrap break-all bg-gray-900 p-4 rounded-md text-gray-300">
+                  {JSON.stringify(results, null, 2)}
+                </pre>
+              )}
             </CardContent>
           </Card>
         )}
       </div>
     </main>
-  )
+  );
 }
